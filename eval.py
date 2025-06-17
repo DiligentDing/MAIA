@@ -1,31 +1,16 @@
 import os, json, time, pathlib, tqdm
-from openai import AzureOpenAI
 from collections import defaultdict
 from openai import OpenAI
-os.environ["OPENAI_API_KEY"] = 'sk-4jnd9yjoIXnQRQ5SXR2b3bVO1d3sHtuyegGMzAl6awSWDRNn' 
-os.environ['OPENAI_BASE_URL'] = 'https://api2.aigcbest.top/v1' 
 
-# os.environ["OPENAI_API_KEY"] = 'sk-OlimLcefr3MBSt08IrcZ9LrhP94qqni4w3u4qkOPFtAULcDD' 
-# os.environ['OPENAI_BASE_URL'] = 'https://api.chatanywhere.tech' 
-
-os.environ["AZURE_OPENAI_API_KEY"] = "5a1437f6ff2648b9b969507fb5a73276"
-os.environ["AZURE_OPENAI_ENDPOINT"] = "https://ai-mistraleastus2753718354821.openai.azure.com/"
-# ========= 0. Azure OpenAI 配置 =========
-client = AzureOpenAI(
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version="2024-12-01-preview",
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
-)
-
-RESPONDER_MODEL = "gpt-4.1-noah"          # 回答模型
-JUDGE_MODEL     = "gpt-4.1-noah"          # 亦可用同一模型评分
-TEMP            = 0.1               # 回答温度
+RESPONDER_MODEL = "answer_model"  # 替换为实际的模型名称      
+JUDGE_MODEL     ="judge_model"     
+TEMP            = 0.1              
 RATE_LIMIT_S    = 1      
-out_dir = pathlib.Path("../res/4.1")
-out_dir.mkdir(exist_ok=True)         # 简单限流间隔
+out_dir = pathlib.Path("../res")
+out_dir.mkdir(exist_ok=True)         
 
 # ========= 1. 加载数据 =========
-with open("../MAIA/MAIA_reasoning.json", "r", encoding="utf-8") as f:
+with open("dataset/MAIA.json", "r", encoding="utf-8") as f:
     qa_pairs = json.load(f)
 
 # ========= 2. 生成模型答案 =========
@@ -38,18 +23,12 @@ else:
 for idx, qa in enumerate(tqdm.tqdm(qa_pairs['dataset'], desc="Generating answers")):
     q = qa["question"]
     if str(idx) in model_answers:
-        continue  # 已存在则跳过（断点续跑）
+        continue  
 
     try:
-        # client = OpenAI(
-        #     api_key="sk-5157bc95a7ee4f7e9086a80fd41c69fc",
-        #     base_url="https://api.deepseek.com/v1"
-        # )
-        # client = OpenAI()
+        client = OpenAI()
         resp = client.chat.completions.create(
             model=RESPONDER_MODEL,
-            # temperature=TEMP,
-            # max_tokens=512,
             messages=[
                 {"role": "system", "content": "You are an experienced oncologist answering exam-style clinical questions concisely and accurately."},
                 {"role": "user",    "content": q}
@@ -62,11 +41,11 @@ for idx, qa in enumerate(tqdm.tqdm(qa_pairs['dataset'], desc="Generating answers
         time.sleep(10)
         continue
 
-    # 每 10 条保存一次
+    
     if idx % 10 == 9:
         json.dump(model_answers, open(answers_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
-# 最终保存
+
 json.dump(model_answers, open(answers_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 # ========= 3. 调用 Judge 评分 =========
 import re
@@ -124,11 +103,6 @@ for idx, qa in enumerate(tqdm.tqdm(qa_pairs['dataset'], desc="Judging answers"))
     )
 
     try:
-        client = AzureOpenAI(
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            api_version="2024-12-01-preview",
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
-        )
 
         resp = client.chat.completions.create(
             model=JUDGE_MODEL,
@@ -139,9 +113,6 @@ for idx, qa in enumerate(tqdm.tqdm(qa_pairs['dataset'], desc="Judging answers"))
                 {"role": "user",    "content": prompt}
             ],
         )
-        # raw = resp.choices[0].message.content.strip()
-        # score = raw.split()[0]  # 第一词应该是分数
-        # judge_scores[str(idx)] = {"score": float(score), "explanation": raw}
 
         raw = resp.choices[0].message.content.strip()
 
@@ -162,16 +133,3 @@ for idx, qa in enumerate(tqdm.tqdm(qa_pairs['dataset'], desc="Judging answers"))
         json.dump(judge_scores, open(scores_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
 json.dump(judge_scores, open(scores_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-
-# ========= 4. 汇总统计 =========
-scores = [v["score"] for v in judge_scores.values()]
-avg   = sum(scores) / len(scores)
-dist  = defaultdict(int)
-for s in scores:
-    dist[int(s)] += 1
-
-print("\n=== Evaluation Summary ===")
-print(f"Samples evaluated : {len(scores)}/{len(qa_pairs)}")
-print(f"Average score     : {avg:.2f} / 5")
-print("Score distribution:", dict(sorted(dist.items())))
-
