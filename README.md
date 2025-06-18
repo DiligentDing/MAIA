@@ -34,7 +34,7 @@ All items follow a unified schema so that an LLM‑based agent can decide *wheth
 
 ## Access via Hugging Face
 
-The full dataset is hosted on **Hugging Face Datasets**: [https://huggingface.co/datasets/DiligentDing/MAIA](https://huggingface.co/datasets/DiligentDing/MAIA)\
+The full dataset is hosted on **Hugging Face Datasets**: [https://huggingface.co/datasets/DiligentDing/MAIA](https://huggingface.co/datasets/DiligentDing/MAIA)
 
 ### Quick load with `datasets`
 
@@ -51,7 +51,7 @@ print(ds[0])
 # Ensure Git‑LFS is installed
 git lfs install
 
-git clone https://huggingface.co/datasets/maia-benchmark/maia
+git clone https://huggingface.co/datasets/DiligentDing/MAIA
 ```
 
 ---
