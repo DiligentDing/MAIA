@@ -29,7 +29,6 @@ Total items: **1 014** (single *full* split).
   "type": "retrieval"
 }
 
----
 
 ## Access via Hugging Face
 
