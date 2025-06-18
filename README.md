@@ -45,16 +45,6 @@ ds = load_dataset("DiligentDing/MAIA", split="full")  # loads the entire benchma
 print(ds[0])
 ```
 
-### Git‑based download (with LFS)
-
-```bash
-# Ensure Git‑LFS is installed
-git lfs install
-
-git clone https://huggingface.co/datasets/DiligentDing/MAIA
-```
-
----
 
 
 
