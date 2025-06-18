@@ -34,15 +34,14 @@ All items follow a unified schema so that an LLM‑based agent can decide *wheth
 
 ## Access via Hugging Face
 
-The full dataset is hosted on **Hugging Face Datasets**: [https://huggingface.co/datasets/maia-benchmark/maia](https://huggingface.co/datasets/maia-benchmark/maia)\
-*(Replace this URL with your actual repository if different.)*
+The full dataset is hosted on **Hugging Face Datasets**: [https://huggingface.co/datasets/DiligentDing/MAIA](https://huggingface.co/datasets/DiligentDing/MAIA)\
 
 ### Quick load with `datasets`
 
 ```python
 from datasets import load_dataset
 
-ds = load_dataset("maia-benchmark/maia", split="full")  # loads the entire benchmark
+ds = load_dataset("DiligentDing/MAIA", split="full")  # loads the entire benchmark
 print(ds[0])
 ```
 
