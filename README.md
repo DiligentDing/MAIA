@@ -1,6 +1,6 @@
 # MAIA Benchmark
 
-**MAIA** (*Medical Agent Intelligence Assessment*) gauges how well an autonomous medical agent can **plan**, **call external tools**, and **reason clinically**.\
+**MAIA** evaluates how well an autonomous medical agent can **plan**, **call external tools**, and **reason clinically**.\
 All items follow a unified schema so that an LLM‑based agent can decide *whether*, *when*, and *how* to invoke the provided APIs.
 
 ## Composition
@@ -9,7 +9,7 @@ All items follow a unified schema so that an LLM‑based agent can decide *wheth
 | ------------------ | ------- | --------------------------------------------------------------------- |
 | Retrieval          | **100** | Retrieve clinically relevant information from trusted medical sources |
 | KG Reasoning       | **466** | Multi‑hop reasoning abilities in medical knowledge‑graph settings     |
-| Diagnostic Pathway | **448** | Reasoning capabilities in authentic clinical scenarios                |
+| Clinical Pathway | **448** | Reasoning capabilities in authentic clinical scenarios                |
 
 **Total items: 1 014** (single *full* split).
 
