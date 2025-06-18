@@ -28,3 +28,28 @@ Total items: **1 014** (single *full* split).
   "answer": ["40360142"],
   "type": "retrieval"
 }
+
+---
+
+## Access via Hugging Face
+
+The full dataset is hosted on **Hugging Face Datasets**: [https://huggingface.co/datasets/maia-benchmark/maia](https://huggingface.co/datasets/maia-benchmark/maia)\
+*(Replace this URL with your actual repository if different.)*
+
+### Quick load with `datasets`
+
+```python
+from datasets import load_dataset
+
+ds = load_dataset("maia-benchmark/maia", split="full")  # loads the entire benchmark
+print(ds[0])
+```
+
+### Git‑based download (with LFS)
+
+```bash
+# Ensure Git‑LFS is installed
+git lfs install
+
+git clone https://huggingface.co/datasets/maia-benchmark/maia
+```
