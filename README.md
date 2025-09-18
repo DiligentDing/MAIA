@@ -7,11 +7,11 @@ All items follow a unified schema so that an LLM‑based agent can decide *wheth
 
 | Task family        | Items   | Evaluated skill                                                       |
 | ------------------ | ------- | --------------------------------------------------------------------- |
-| Retrieval          | **100** | Retrieve clinically relevant information from trusted medical sources |
-| KG Reasoning       | **466** | Multi‑hop reasoning abilities in medical knowledge‑graph settings     |
-| Clinical Pathway | **448** | Reasoning capabilities in authentic clinical scenarios                |
+| Retrieval          | **471** | Retrieve clinically relevant information from trusted medical sources |
+| KG Reasoning       | **2068** | Multi‑hop reasoning abilities in medical knowledge‑graph settings     |
+| Clinical Pathway | **1937** | Reasoning capabilities in authentic clinical scenarios                |
 
-**Total items: 1 014** (single *full* split).
+**Total items: 4476** (single *full* split).
 
 ## Data format
 
