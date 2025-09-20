@@ -14,7 +14,7 @@ pubmed_schema = {
 }
 
 ctgov_schema = {
-    "name": "ctgov_search",
+    "name": "ctgov.search",
     "description": "Search ClinicalTrials.gov v2 and return matching NCT IDs.",
     "parameters": {
         "type": "object",
@@ -52,16 +52,22 @@ ctgov_schema = {
                 "description": "Page size (1–100)"
             }
         },
-        "additionalProperties": False      # 仍禁止未知键
+    "additionalProperties": False
     }
+}
+
+# Backward-compatible alias (previous name used underscore style)
+ctgov_schema_legacy = {
+    **ctgov_schema,
+    "name": "ctgov_search",
 }
 
 
 
 
 ot_search_schema = {
-    "name": "opentargets.search",
-    "description": "Return diseases associated with a target (score cutoff).",
+    "name": "opentargets.associated_diseases",
+    "description": "Return diseases associated with a target (with score cutoff).",
     "parameters": {
         "type": "object",
         "properties": {
@@ -70,6 +76,12 @@ ot_search_schema = {
         },
         "required": ["target_id"]
     }
+}
+
+# Legacy alias to preserve older tool name
+ot_search_schema_legacy = {
+    **ot_search_schema,
+    "name": "opentargets.search",
 }
 
 ot_tract_schema = {
@@ -149,8 +161,8 @@ onco_path_schema = {
 }
 
 ALL_SCHEMAS = [
-    pubmed_schema, ctgov_schema,
-    ot_search_schema, ot_tract_schema, ot_safety_schema,
+    pubmed_schema, ctgov_schema, ctgov_schema_legacy,
+    ot_search_schema, ot_search_schema_legacy, ot_tract_schema, ot_safety_schema,
     umls_lookup_schema, umls_related_schema, umls_cui_to_name_schema,
     onco_path_schema
 ]

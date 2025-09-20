@@ -1,82 +1,119 @@
-import os, json, time, pathlib, tqdm
-from collections import defaultdict
-from openai import OpenAI
+from __future__ import annotations
 
-RESPONDER_MODEL = "answer_model"  # 替换为实际的模型名称      
-JUDGE_MODEL     ="judge_model"     
-TEMP            = 0.1              
-RATE_LIMIT_S    = 1      
-out_dir = pathlib.Path("../res")
-out_dir.mkdir(exist_ok=True)         
-
-# ========= 1. 加载数据 =========
-with open("dataset/MAIA.json", "r", encoding="utf-8") as f:
-    qa_pairs = json.load(f)
-
-# ========= 2. 生成模型答案 =========
-answers_path = out_dir / "model_answers.json"
-if answers_path.exists():
-    model_answers = json.load(open(answers_path))
-else:
-    model_answers = {}
-
-for idx, qa in enumerate(tqdm.tqdm(qa_pairs['dataset'], desc="Generating answers")):
-    q = qa["question"]
-    if str(idx) in model_answers:
-        continue  
-
-    try:
-        client = OpenAI()
-        resp = client.chat.completions.create(
-            model=RESPONDER_MODEL,
-            messages=[
-                {"role": "system", "content": "You are an experienced oncologist answering exam-style clinical questions concisely and accurately."},
-                {"role": "user",    "content": q}
-            ],
-        )
-        model_answers[str(idx)] = resp.choices[0].message.content.strip()
-        time.sleep(RATE_LIMIT_S)
-    except Exception as e:
-        print(f"[Responder error @ {idx}] {e}. Retrying in 10 s…")
-        time.sleep(10)
-        continue
-
-    
-    if idx % 10 == 9:
-        json.dump(model_answers, open(answers_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-
-
-json.dump(model_answers, open(answers_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-# ========= 3. 调用 Judge 评分 =========
+import argparse
+import json
+import pathlib
+import time
 import re
-scores_path = out_dir / "judge_scores.json"
-if scores_path.exists():
-    judge_scores = json.load(open(scores_path))
-else:
-    judge_scores = {}
+from typing import Any, Dict, Iterable, List, Optional
 
-judge_prompt_tpl = """You are an impartial medical board examiner.
-Score the model answer against the reference answer on a 0–5 scale,
-using the *refined* rubric below.  If unsure between two scores, pick
-the **lower** one.
+try:
+    from openai import OpenAI  # type: ignore
+except Exception:  # pragma: no cover - optional at import time
+    OpenAI = None  # type: ignore
+
+try:
+    from tqdm import tqdm  # type: ignore
+except Exception:  # pragma: no cover - allow --help without tqdm installed
+    def tqdm(x, **kwargs):
+        return x
+
+
+def load_items(path: pathlib.Path) -> List[Dict[str, Any]]:
+    """Load MAIA items from a JSON file.
+
+    Accepts either a list of QA dicts or a dict with key 'dataset'.
+    """
+    with path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict) and "dataset" in data:
+        return data["dataset"]
+    if isinstance(data, list):
+        return data
+    raise ValueError("Unsupported dataset format; expected list or {'dataset': [...]}")
+
+
+def ensure_dir(p: pathlib.Path) -> None:
+    p.mkdir(parents=True, exist_ok=True)
+
+
+def save_json(obj: Any, path: pathlib.Path) -> None:
+    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def generate_answers(
+    items: List[Dict[str, Any]],
+    client: Any,
+    model: str,
+    temperature: float,
+    rate_limit_s: float,
+    out_path: pathlib.Path,
+    start: int = 0,
+    end: int | None = None,
+) -> Dict[str, str]:
+    """Generate model answers for the given slice of items.
+
+    Returns a dict mapping string index to answer text and persists to out_path.
+    """
+    # resume if exists
+    if out_path.exists():
+        try:
+            model_answers: Dict[str, str] = json.loads(out_path.read_text(encoding="utf-8"))
+        except Exception:
+            model_answers = {}
+    else:
+        model_answers = {}
+
+    rng = range(start, len(items) if end is None else min(end, len(items)))
+    for idx in tqdm(rng, desc="Generating answers"):
+        if str(idx) in model_answers:
+            continue
+
+        q = items[idx]["question"]
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                temperature=temperature,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an experienced oncologist answering exam-style "
+                            "clinical questions concisely and accurately."
+                        ),
+                    },
+                    {"role": "user", "content": q},
+                ],
+            )
+            model_answers[str(idx)] = resp.choices[0].message.content.strip()
+            time.sleep(rate_limit_s)
+        except Exception as e:
+            print(f"[Responder error @ {idx}] {e}. Retrying in 10 s…")
+            time.sleep(10)
+            continue
+
+        if idx % 10 == 9:
+            save_json(model_answers, out_path)
+
+    save_json(model_answers, out_path)
+    return model_answers
+
+
+JUDGE_PROMPT_TPL = """You are an impartial medical board examiner.
+Score the model answer against the reference answer on a 0–5 scale.
+If unsure between two scores, pick the lower one.
 
 Rubric:
-5 = Covers **all** key clinical facts in the reference; any additional
-    explanations are factually correct *and clinically relevant*; no
-    inaccuracies, unsafe statements, or major omissions.
-4 = ≥90 % of key facts correct; extra content is correct; at most one
-    minor omission **or** wording inaccuracy that does not alter meaning.
-3 = 70-89 % of key facts covered; may include a few minor errors or
-    omissions, but no clinically dangerous advice.
-2 = 40-69 % of key facts **or** ≥1 moderate factual error/omission; some
-    irrelevant or redundant statements allowed.
-1 = <40 % of key facts **or** major inaccuracies; content mostly
-    irrelevant or confusing.
-0 = Blank, nonsense, or any clearly unsafe recommendation.
+5 = Covers all key clinical facts; any extra content is correct & relevant.
+4 = ≥90% key facts correct; at most one minor omission or wording issue.
+3 = 70–89% key facts covered; may include a few minor errors; none unsafe.
+2 = 40–69% key facts or ≥1 moderate error/omission; some irrelevant content.
+1 = <40% key facts or major inaccuracies; mostly irrelevant or confusing.
+0 = Blank, nonsense, or clearly unsafe recommendation.
 
 Penalty rules:
-• Extra content that is factually correct & relevant → **no penalty**.
-• Extra but irrelevant OR factually wrong content → lower the score.
+• Extra correct & relevant content → no penalty.
+• Extra irrelevant or wrong content → lower the score.
 • Any unsafe or potentially harmful statement → max score = 1.
 
 Return exactly one line:
@@ -92,44 +129,141 @@ Model answer:
 {model_answer}
 """
 
-for idx, qa in enumerate(tqdm.tqdm(qa_pairs['dataset'], desc="Judging answers")):
-    if str(idx) in judge_scores:
-        continue
 
-    prompt = judge_prompt_tpl.format(
-        question=qa["question"],
-        ref_answer=qa["answer"],
-        model_answer=model_answers.get(str(idx), "")
-    )
+def judge_answers(
+    items: List[Dict[str, Any]],
+    client: Any,
+    model: str,
+    rate_limit_s: float,
+    answers: Dict[str, str],
+    out_path: pathlib.Path,
+    start: int = 0,
+    end: int | None = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Score model answers and persist to out_path.
 
-    try:
+    Returns a dict mapping index str to {score, explanation}.
+    """
+    if out_path.exists():
+        try:
+            judge_scores: Dict[str, Dict[str, Any]] = json.loads(out_path.read_text(encoding="utf-8"))
+        except Exception:
+            judge_scores = {}
+    else:
+        judge_scores = {}
 
-        resp = client.chat.completions.create(
-            model=JUDGE_MODEL,
-            temperature=0,
-            max_tokens=120,
-            messages=[
-                {"role": "system", "content": "You are an expert clinical examiner."},
-                {"role": "user",    "content": prompt}
-            ],
+    rng = range(start, len(items) if end is None else min(end, len(items)))
+    for idx in tqdm(rng, desc="Judging answers"):
+        if str(idx) in judge_scores:
+            continue
+
+        ref_answer = items[idx].get("answer", "")
+        if isinstance(ref_answer, list):
+            ref_answer_str = ", ".join(map(str, ref_answer))
+        else:
+            ref_answer_str = str(ref_answer)
+
+        prompt = JUDGE_PROMPT_TPL.format(
+            question=items[idx]["question"],
+            ref_answer=ref_answer_str,
+            model_answer=answers.get(str(idx), ""),
         )
 
-        raw = resp.choices[0].message.content.strip()
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                temperature=0,
+                max_tokens=120,
+                messages=[
+                    {"role": "system", "content": "You are an expert clinical examiner."},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            raw = resp.choices[0].message.content.strip()
 
-        m = re.search(r"\b([0-5](?:\.\d+)?)\b", raw)
-        if not m:
-            print(f"[Judge format error @ {idx}] {raw}")
-            continue                      # 或者 retry
+            m = re.search(r"\b([0-5](?:\.\d+)?)\b", raw)
+            if not m:
+                print(f"[Judge format error @ {idx}] {raw}")
+                continue
 
-        score = float(m.group(1))
-        judge_scores[str(idx)] = {"score": score, "explanation": raw}
-        time.sleep(RATE_LIMIT_S)
-    except Exception as e:
-        print(f"[Judge error @ {idx}] {e}. Retrying in 5 s…")
-        time.sleep(5)
-        continue
+            score = float(m.group(1))
+            judge_scores[str(idx)] = {"score": score, "explanation": raw}
+            time.sleep(rate_limit_s)
+        except Exception as e:
+            print(f"[Judge error @ {idx}] {e}. Retrying in 5 s…")
+            time.sleep(5)
+            continue
 
-    if idx % 10 == 9:
-        json.dump(judge_scores, open(scores_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+        if idx % 10 == 9:
+            save_json(judge_scores, out_path)
 
-json.dump(judge_scores, open(scores_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    save_json(judge_scores, out_path)
+    return judge_scores
+
+
+def mean_score(scores: Dict[str, Dict[str, Any]]) -> float:
+    vals = [v["score"] for v in scores.values() if isinstance(v, dict) and "score" in v]
+    return sum(vals) / len(vals) if vals else 0.0
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Evaluate MAIA model answers with an LLM judge.")
+    p.add_argument("--input", default="dataset/MAIA.json", help="Path to dataset JSON")
+    p.add_argument("--outdir", default="./res", help="Output directory for results")
+    p.add_argument("--responder-model", default="answer_model", help="Model name for answer generation")
+    p.add_argument("--judge-model", default="judge_model", help="Model name for judging")
+    p.add_argument("--temperature", type=float, default=0.1, help="Temperature for responder model")
+    p.add_argument("--rate-limit-s", type=float, default=1.0, help="Delay between API calls in seconds")
+    p.add_argument("--start", type=int, default=0, help="Start index (inclusive)")
+    p.add_argument("--end", type=int, default=None, help="End index (exclusive)")
+    p.add_argument("--skip-generate", action="store_true", help="Skip answer generation phase")
+    p.add_argument("--skip-judge", action="store_true", help="Skip judge phase")
+    return p.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    in_path = pathlib.Path(args.input)
+    out_dir = pathlib.Path(args.outdir)
+    ensure_dir(out_dir)
+
+    items = load_items(in_path)
+    if OpenAI is None:
+        raise RuntimeError("openai package not installed. Please `pip install openai`.")
+    client = OpenAI()
+
+    answers_path = out_dir / "model_answers.json"
+    scores_path = out_dir / "judge_scores.json"
+
+    if not args.skip_generate:
+        answers = generate_answers(
+            items=items,
+            client=client,
+            model=args.responder_model,
+            temperature=args.temperature,
+            rate_limit_s=args.rate_limit_s,
+            out_path=answers_path,
+            start=args.start,
+            end=args.end,
+        )
+    else:
+        answers = json.loads(answers_path.read_text(encoding="utf-8")) if answers_path.exists() else {}
+
+    if not args.skip_judge:
+        scores = judge_answers(
+            items=items,
+            client=client,
+            model=args.judge_model,
+            rate_limit_s=args.rate_limit_s,
+            answers=answers,
+            out_path=scores_path,
+            start=args.start,
+            end=args.end,
+        )
+        print(f"Average score: {mean_score(scores):.3f} over {len(scores)} items")
+    else:
+        print("Judge phase skipped.")
+
+
+if __name__ == "__main__":
+    main()

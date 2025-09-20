@@ -1,9 +1,15 @@
 # tools/impl.py
 from __future__ import annotations
-import os 
-import json, requests, pymysql
-from typing import List, Dict, Any, Tuple
-import re  
+import os
+import json
+import re
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
+try:
+    import pymysql  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    pymysql = None  # type: ignore
 # ───────────────────────────────────────────
 # 1) PubMed
 # ───────────────────────────────────────────
@@ -22,7 +28,6 @@ def pubmed_search(term: str, retmax: int = 10) -> List[str]:
 # ───────────────────────────────────────────
 
 import requests, urllib.parse
-from typing import Dict, List, Optional
 
 CTGOV = "https://clinicaltrials.gov/api/v2/studies"
 
@@ -186,16 +191,33 @@ DB_CFG = dict(
     cursorclass=pymysql.cursors.DictCursor,
     autocommit=True,
 )
-_conn = pymysql.connect(**DB_CFG)
+
+
+_conn = None  # lazy, typed at runtime
+
+def _get_conn():
+    global _conn
+    if _conn is not None:
+        return _conn
+    if pymysql is None:
+        raise RuntimeError("pymysql is not installed; UMLS functions are unavailable. Install 'pymysql' or skip these tools.")
+    # Basic env validation to avoid confusing errors
+    missing = [k for k in ("UMLS_DB_USER", "UMLS_DB_PASSWORD") if not os.getenv(k)]
+    if missing:
+        raise RuntimeError(f"Missing required env vars for UMLS DB: {', '.join(missing)}")
+    _conn = pymysql.connect(**DB_CFG)
+    return _conn
 
 def umls_concept_lookup(name: str) -> str:
-    with _conn.cursor() as cur:
+    conn = _get_conn()
+    with conn.cursor() as cur:
         cur.execute("SELECT cui FROM concepts WHERE STR = %s LIMIT 1", (name,))
         row = cur.fetchone()
         return row["cui"] if row else ""
 
 def umls_get_related(from_cui: str, rela: str) -> List[str]:
-    with _conn.cursor() as cur:
+    conn = _get_conn()
+    with conn.cursor() as cur:
         cur.execute(
             "SELECT cui1 FROM MRREL WHERE cui2=%s AND rela=%s",
             (from_cui, rela))
@@ -210,7 +232,8 @@ def umls_cui_to_name(cui: str) -> str:
         FROM   MRCONSO
         WHERE  LAT='ENG' AND CUI=%s
     """
-    with _conn.cursor() as cur:
+    conn = _get_conn()
+    with conn.cursor() as cur:
         cur.execute(sql, (cui,))
         names = []
         pfpt = None

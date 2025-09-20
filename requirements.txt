@@ -1,0 +1,5 @@
+# Minimal deps to run MAIA local tools and eval
+openai>=1.40.0
+requests>=2.31.0
+tqdm>=4.66.0
+pymysql>=1.1.0
