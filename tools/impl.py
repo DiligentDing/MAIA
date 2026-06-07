@@ -188,9 +188,11 @@ DB_CFG = dict(
     user=os.getenv("UMLS_DB_USER"),
     password=os.getenv("UMLS_DB_PASSWORD"),
     database=os.getenv("UMLS_DB_NAME", "umls"),
-    cursorclass=pymysql.cursors.DictCursor,
     autocommit=True,
 )
+
+if pymysql is not None:
+    DB_CFG["cursorclass"] = pymysql.cursors.DictCursor
 
 
 _conn = None  # lazy, typed at runtime

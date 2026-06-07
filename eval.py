@@ -18,6 +18,127 @@ except Exception:  # pragma: no cover - allow --help without tqdm installed
     def tqdm(x, **kwargs):
         return x
 
+from tools.impl import (
+    ctgov_search,
+    oncology_path_query,
+    ot_associated_diseases,
+    ot_safety,
+    ot_tractability,
+    pubmed_search,
+    umls_concept_lookup,
+    umls_cui_to_name,
+    umls_get_related,
+)
+from tools.schema import ALL_SCHEMAS
+
+
+SYSTEM_PROMPT = (
+    "You are an experienced oncologist answering exam-style clinical questions "
+    "concisely and accurately."
+)
+
+
+TOOL_FUNCTIONS = {
+    "pubmed.search": pubmed_search,
+    "ctgov.search": ctgov_search,
+    "ctgov_search": ctgov_search,
+    "opentargets.associated_diseases": ot_associated_diseases,
+    "opentargets.search": ot_associated_diseases,
+    "opentargets.tractability": ot_tractability,
+    "opentargets.safety": ot_safety,
+    "umls.concept_lookup": umls_concept_lookup,
+    "umls.get_related": umls_get_related,
+    "umls.cui_to_name": umls_cui_to_name,
+    "oncology.path_query": oncology_path_query,
+}
+
+
+def _normalize_tool_result(result: Any) -> str:
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        return result
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _invoke_tool(tool_name: str, arguments: Dict[str, Any]) -> str:
+    func = TOOL_FUNCTIONS.get(tool_name)
+    if func is None:
+        return _normalize_tool_result({"error": f"Unsupported tool: {tool_name}"})
+
+    try:
+        result = func(**arguments)
+        return _normalize_tool_result(result)
+    except Exception as exc:
+        return _normalize_tool_result({"error": f"{type(exc).__name__}: {exc}"})
+
+
+def _tool_messages_from_response(message: Any) -> List[Dict[str, Any]]:
+    tool_messages: List[Dict[str, Any]] = []
+    for tool_call in getattr(message, "tool_calls", None) or []:
+        function_call = tool_call.function
+        try:
+            arguments = json.loads(function_call.arguments) if function_call.arguments else {}
+        except Exception:
+            arguments = {}
+        tool_messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": _invoke_tool(function_call.name, arguments),
+            }
+        )
+    return tool_messages
+
+
+def _generate_answer_with_tools(
+    client: Any,
+    model: str,
+    question: str,
+    temperature: float,
+    max_tool_rounds: int,
+) -> str:
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": question},
+    ]
+
+    for _ in range(max_tool_rounds):
+        resp = client.chat.completions.create(
+            model=model,
+            temperature=temperature,
+            messages=messages,
+            tools=ALL_SCHEMAS,
+            tool_choice="auto",
+        )
+        message = resp.choices[0].message
+        tool_calls = getattr(message, "tool_calls", None) or []
+        content = (message.content or "").strip()
+        if not tool_calls:
+            return content
+
+        assistant_message: Dict[str, Any] = {"role": "assistant", "content": message.content or ""}
+        assistant_message["tool_calls"] = [
+            {
+                "id": tool_call.id,
+                "type": tool_call.type,
+                "function": {
+                    "name": tool_call.function.name,
+                    "arguments": tool_call.function.arguments,
+                },
+            }
+            for tool_call in tool_calls
+        ]
+        messages.append(assistant_message)
+        messages.extend(_tool_messages_from_response(message))
+
+    resp = client.chat.completions.create(
+        model=model,
+        temperature=temperature,
+        messages=messages,
+    )
+    return (resp.choices[0].message.content or "").strip()
+
 
 def load_items(path: pathlib.Path) -> List[Dict[str, Any]]:
     """Load MAIA items from a JSON file.
@@ -50,6 +171,8 @@ def generate_answers(
     out_path: pathlib.Path,
     start: int = 0,
     end: int | None = None,
+    use_tools: bool = False,
+    max_tool_rounds: int = 4,
 ) -> Dict[str, str]:
     """Generate model answers for the given slice of items.
 
@@ -71,21 +194,25 @@ def generate_answers(
 
         q = items[idx]["question"]
         try:
-            resp = client.chat.completions.create(
-                model=model,
-                temperature=temperature,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an experienced oncologist answering exam-style "
-                            "clinical questions concisely and accurately."
-                        ),
-                    },
-                    {"role": "user", "content": q},
-                ],
-            )
-            model_answers[str(idx)] = resp.choices[0].message.content.strip()
+            if use_tools:
+                answer = _generate_answer_with_tools(
+                    client=client,
+                    model=model,
+                    question=q,
+                    temperature=temperature,
+                    max_tool_rounds=max_tool_rounds,
+                )
+            else:
+                resp = client.chat.completions.create(
+                    model=model,
+                    temperature=temperature,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": q},
+                    ],
+                )
+                answer = (resp.choices[0].message.content or "").strip()
+            model_answers[str(idx)] = answer
             time.sleep(rate_limit_s)
         except Exception as e:
             print(f"[Responder error @ {idx}] {e}. Retrying in 10 s…")
@@ -216,6 +343,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--rate-limit-s", type=float, default=1.0, help="Delay between API calls in seconds")
     p.add_argument("--start", type=int, default=0, help="Start index (inclusive)")
     p.add_argument("--end", type=int, default=None, help="End index (exclusive)")
+    p.add_argument("--use-tools", action="store_true", help="Enable tool calling with ALL_SCHEMAS")
+    p.add_argument("--max-tool-rounds", type=int, default=4, help="Maximum tool-calling rounds per item")
     p.add_argument("--skip-generate", action="store_true", help="Skip answer generation phase")
     p.add_argument("--skip-judge", action="store_true", help="Skip judge phase")
     return p.parse_args()
@@ -245,6 +374,8 @@ def main() -> None:
             out_path=answers_path,
             start=args.start,
             end=args.end,
+            use_tools=args.use_tools,
+            max_tool_rounds=args.max_tool_rounds,
         )
     else:
         answers = json.loads(answers_path.read_text(encoding="utf-8")) if answers_path.exists() else {}

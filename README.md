@@ -1,6 +1,7 @@
 # MAIA Benchmark
 
 **MAIA** evaluates how well an autonomous medical agent can **plan**, **call external tools**, and **reason clinically**.\
+The dataset and code are maintained on GitHub; Hugging Face is kept as a mirror for convenience.\
 All items follow a unified schema so that an LLM‑based agent can decide *whether*, *when*, and *how* to invoke the provided APIs.
 
 ## Composition
@@ -9,7 +10,7 @@ All items follow a unified schema so that an LLM‑based agent can decide *wheth
 | ------------------ | ------- | --------------------------------------------------------------------- |
 | Retrieval          | **471** | Retrieve clinically relevant information from trusted medical sources |
 | KG Reasoning       | **2068** | Multi‑hop reasoning abilities in medical knowledge‑graph settings     |
-| Clinical Pathway | **1937** | Reasoning capabilities in authentic clinical scenarios                |
+| Clinical Pathway | **1937** | Oncology guideline reasoning in authentic clinical scenarios          |
 
 **Total items: 4476** (single *full* split).
 
@@ -43,7 +44,11 @@ All items follow a unified schema so that an LLM‑based agent can decide *wheth
 
 ---
 
-## Access via Hugging Face
+## Access via GitHub
+
+The primary repository is hosted on GitHub: [https://github.com/DiligentDing/MAIA](https://github.com/DiligentDing/MAIA)
+
+### Hugging Face mirror
 
 The full dataset is hosted on **Hugging Face Datasets**: [https://huggingface.co/datasets/DiligentDing/MAIA](https://huggingface.co/datasets/DiligentDing/MAIA)
 
@@ -70,7 +75,7 @@ pip install -r requirements.txt
 - OpenAI API: set environment variable `OPENAI_API_KEY`.
 - Optional UMLS MySQL for UMLS tools: set `UMLS_DB_HOST`, `UMLS_DB_PORT`, `UMLS_DB_USER`, `UMLS_DB_PASSWORD`, `UMLS_DB_NAME`.
 
-3) Run evaluation over the bundled JSON or a custom slice:
+3) Run the no-tool baseline over the bundled JSON or a custom slice:
 
 ```bash
 python eval.py \
@@ -81,6 +86,8 @@ python eval.py \
   --temperature 0.1 \
   --rate-limit-s 1
 ```
+
+To enable real tool calling against `tools/schema.py` and `tools/impl.py`, add `--use-tools`.
 
 Useful flags:
 
@@ -96,6 +103,14 @@ Notes:
 
 - The judge expects the reference answer to be a string or list of strings in the dataset.
 - If using UMLS tools in `tools/impl.py`, ensure DB connectivity; the connection is created lazily when the first UMLS function is invoked.
+
+## Intended Use and Limitations
+
+- MAIA is intended for benchmarking agentic medical reasoning, tool use, and answer judging.
+- The clinical-pathway split is currently focused on oncology guidelines and should not be treated as a general-purpose coverage set for all specialties.
+- The included evaluation script supports a no-tool baseline by default; tool calling should be enabled explicitly with `--use-tools`.
+- Tool outputs depend on live external services and local UMLS connectivity, so results may vary over time.
+
 
 
 
