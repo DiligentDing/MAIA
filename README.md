@@ -44,13 +44,12 @@ All items follow a unified schema so that an LLM‑based agent can decide *wheth
 
 ---
 
-## Access via GitHub
+## Access
 
-The primary repository is hosted on GitHub: [https://github.com/DiligentDing/MAIA](https://github.com/DiligentDing/MAIA)
+The dataset, tool schemas, and evaluation code are maintained in this GitHub repository.
 
-### Hugging Face mirror
-
-The full dataset is hosted on **Hugging Face Datasets**: [https://huggingface.co/datasets/DiligentDing/MAIA](https://huggingface.co/datasets/DiligentDing/MAIA)
+A Hugging Face mirror is also available for convenient loading:
+https://huggingface.co/datasets/DiligentDing/MAIA
 
 ### Quick load with `datasets`
 
