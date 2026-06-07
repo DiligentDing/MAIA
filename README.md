@@ -104,13 +104,6 @@ Notes:
 - The judge expects the reference answer to be a string or list of strings in the dataset.
 - If using UMLS tools in `tools/impl.py`, ensure DB connectivity; the connection is created lazily when the first UMLS function is invoked.
 
-## Intended Use and Limitations
-
-- MAIA is intended for benchmarking agentic medical reasoning, tool use, and answer judging.
-- The clinical-pathway split is currently focused on oncology guidelines and should not be treated as a general-purpose coverage set for all specialties.
-- The included evaluation script supports a no-tool baseline by default; tool calling should be enabled explicitly with `--use-tools`.
-- Tool outputs depend on live external services and local UMLS connectivity, so results may vary over time.
-
 
 
 
